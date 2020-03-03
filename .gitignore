@@ -1,7 +1,11 @@
 redis-cluster-proxy
+cmake-build-debug
+CMakeLists.txt
+.idea
 tmp/
 *.o
 *.swp
+*.bak
 .make-*
 .prerequisites
 *.dSYM

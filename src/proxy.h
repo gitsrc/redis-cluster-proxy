@@ -36,6 +36,9 @@
 #include "config.h"
 #include "version.h"
 
+#define AF_INET6        30              /* IPv6 */
+#define AF_INET         2               /* internetwork: UDP, TCP, etc. */
+
 #define CLIENT_STATUS_NONE          0
 #define CLIENT_STATUS_LINKED        1
 #define CLIENT_STATUS_UNLINKED      2
@@ -84,7 +87,7 @@ typedef struct clientRequest {
     int owned_by_client;
     int closes_transaction;
     list *child_requests;
-    rax  *child_replies;
+    rax *child_replies;
     uint64_t max_child_reply_id;
     struct clientRequest *parent_request;
     /* Pointers to *listNode used in various list. They allow to quickly
@@ -100,8 +103,13 @@ typedef struct clientRequest {
 } clientRequest;
 
 typedef struct {
+    int af; //AF_INET6 or AF_INET网络
+} fdsInfo;
+
+typedef struct {
     aeEventLoop *main_loop;
     int fds[BINDADDR_MAX];
+    fdsInfo fds_info[BINDADDR_MAX]; //fd的类型 是ipv4，还是ipv6
     int fd_count;
     int unixsocket_fd;
     int tcp_backlog;
@@ -161,10 +169,14 @@ typedef struct client {
 } client;
 
 int getCurrentThreadID(void);
+
 int processRequest(clientRequest *req, int *parsing_status,
-    clientRequest **next);
+                   clientRequest **next);
+
 void freeRequest(clientRequest *req);
+
 void freeRequestList(list *request_list);
+
 void onClusterNodeDisconnection(clusterNode *node);
 
 #endif /* __REDIS_CLUSTER_PROXY_H__ */

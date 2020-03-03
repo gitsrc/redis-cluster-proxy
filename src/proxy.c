@@ -2872,22 +2872,45 @@ static int listen(void) {
     int fd_idx = 0;
     /* Try to use both IPv6 and IPv4 */
     if (config.port != 0) {
+        proxyLogInfo("config bindaddr count :%d\n",config.bindaddr_count);
+        //如果配置文件或者终端配置中没有bind选项，则进行默认的bind操作，默认操作针对ipv6和ipv4均进行监听操作。
+        //此处使用redis的anet网络封装
         if (config.bindaddr_count == 0) {
+            //针对port建立tcp6的监听
             proxy.fds[fd_idx] = anetTcp6Server(proxy.neterr, config.port, NULL,
                                                proxy.tcp_backlog);
-            if (proxy.fds[fd_idx] != ANET_ERR)
+            //如果tcp6 bind建立成功，则进行bind-fd的非阻塞设置
+            if (proxy.fds[fd_idx] != ANET_ERR){
+                proxy.fds_info[fd_idx].af = AF_INET6;
                 anetNonBlock(NULL, proxy.fds[fd_idx++]);
+            }
             else if (errno == EAFNOSUPPORT)
                 proxyLogWarn("Not listening to IPv6: unsupported");
 
+            //针对port建立tcp4的监听
             proxy.fds[fd_idx] = anetTcpServer(proxy.neterr, config.port, NULL,
                                               proxy.tcp_backlog);
-            if (proxy.fds[fd_idx] != ANET_ERR)
+            //如果tcp4 bind建立成功，则进行bind-fd的非阻塞设置
+            if (proxy.fds[fd_idx] != ANET_ERR){
+                proxy.fds_info[fd_idx].af = AF_INET;
                 anetNonBlock(NULL, proxy.fds[fd_idx++]);
+            }
+
             else if (errno == EAFNOSUPPORT)
                 proxyLogWarn("Not listening to IPv4: unsupported");
-            if (fd_idx > 0)
-                proxyLogInfo("Listening on *:%d", config.port);
+
+            if (fd_idx > 0){
+                for (int i =0;i<fd_idx;i++){
+                    switch (proxy.fds_info[i].af) {
+                        case AF_INET6:
+                            proxyLogInfo("Listening on IPV6 ::1:%d", config.port);
+                            break;
+                        case AF_INET:
+                            proxyLogInfo("Listening on IPV4 127.0.0.1:%d", config.port);
+                            break;
+                    }
+                }
+            }
             else {
                 proxyLogErr("Failed to listen on *:%d", config.port);
                 if (strlen(proxy.neterr))
@@ -4571,17 +4594,18 @@ void createPidFile(void) {
     proxyLogInfo("Pidfile: '%s'", config.pidfile);
 }
 
+//redis cluster proxy main funciton
 int main(int argc, char **argv) {
     int exit_status = 0, i;
     signal(SIGPIPE, SIG_IGN);
-    setupSignalHandlers();
-    uname(&proxy_os);
-    ae_api_kqueue = (strcmp("kqueue", aeGetApiName()) == 0);
+    setupSignalHandlers(); //设置相关信号的处理handle
+    uname(&proxy_os);  //调用uname内核函数，获取操作系统相关信息
+    ae_api_kqueue = (strcmp("kqueue", aeGetApiName()) == 0); // 1
     thread_id = PROXY_MAIN_THREAD_ID;
-    initConfig();
+    initConfig(); //初始化config结构体 extern redisClusterProxyConfig config;
     proxy.configfile = NULL;
     proxy.threads = NULL;
-    int parsed_opts = parseOptions(argc, argv);
+    int parsed_opts = parseOptions(argc, argv); //解析cmd参数 如果有c参数，则从文件尝试解析参数
     if (config.logfile != NULL) {
         /* If the logfile is an empty string, set it NULL and use STDOUT */
         if (config.logfile[0] == '\0') {
@@ -4632,8 +4656,8 @@ int main(int argc, char **argv) {
     }
     proxy.unixsocket_fd = -1;
     proxy.tcp_backlog = config.tcp_backlog;
-    checkTcpBacklogSettings();
-    if (!listen()) {
+    checkTcpBacklogSettings(); //检测tcp backlog的大小情况。
+    if (!listen()) { //初始化对外监听，包括tcp、unix等
         exit_status = 1;
         goto cleanup;
     }
